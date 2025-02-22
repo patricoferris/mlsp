@@ -1,4 +1,4 @@
 (library
- (name mdlsp)
- (public_name mdlsp)
- (libraries lsp eio astring cmarkit))
+ (name mlsp)
+ (public_name mlsp)
+ (libraries lsp eio logs astring))

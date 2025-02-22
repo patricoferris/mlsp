@@ -1,4 +1,6 @@
-mdlsp
+mlsp
 -----
 
-A framework for building custom markdown LSP servers in OCaml.
+*Status: WIP*
+
+Mlsp is a small framework for building LSP servers in OCaml.
