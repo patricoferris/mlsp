@@ -1,12 +1,9 @@
 open Eio.Std
+module T = Lsp.Types
 
 let src = Logs.Src.create "mlsp.server" ~doc:"LSP server"
 
 module Log = (val Logs.src_log src : Logs.LOG)
-
-let exn = function
-  | Ok v -> v
-  | Error s -> failwith s
 
 type ('req, 'res) handle = 'req Type.Id.t * 'res Type.Id.t
 
@@ -42,29 +39,17 @@ let noop = fun _ -> None
 
 type route = Route : ('req, 'res) handle * ('req -> 'res) -> route
 
-let codelens_params_kind : Lsp.Types.CodeLensParams.t Type.Id.t =
-  Type.Id.make ()
-
-let codelens_kind : Lsp.Types.CodeLens.t list Type.Id.t = Type.Id.make ()
+let codelens_params_kind : T.CodeLensParams.t Type.Id.t = Type.Id.make ()
+let codelens_kind : T.CodeLens.t list Type.Id.t = Type.Id.make ()
 let codelens f = Route ((codelens_params_kind, codelens_kind), f)
-
-let code_action_params_kind : Lsp.Types.CodeActionParams.t Type.Id.t =
-  Type.Id.make ()
-
-let code_action_result_kind : Lsp.Types.CodeActionResult.t Type.Id.t =
-  Type.Id.make ()
-
+let code_action_params_kind : T.CodeActionParams.t Type.Id.t = Type.Id.make ()
+let code_action_result_kind : T.CodeActionResult.t Type.Id.t = Type.Id.make ()
 let code_action f = Route ((code_action_params_kind, code_action_result_kind), f)
-let hover_params_kind : Lsp.Types.HoverParams.t Type.Id.t = Type.Id.make ()
-let hover_kind : Lsp.Types.Hover.t option Type.Id.t = Type.Id.make ()
-let text_document_hover f = Route ((hover_params_kind, hover_kind), f)
-
-let initialize_params_kind : Lsp.Types.InitializeParams.t Type.Id.t =
-  Type.Id.make ()
-
-let initialize_result_kind : Lsp.Types.InitializeResult.t Type.Id.t =
-  Type.Id.make ()
-
+let hover_params_kind : T.HoverParams.t Type.Id.t = Type.Id.make ()
+let hover_kind : T.Hover.t option Type.Id.t = Type.Id.make ()
+let hover f = Route ((hover_params_kind, hover_kind), f)
+let initialize_params_kind : T.InitializeParams.t Type.Id.t = Type.Id.make ()
+let initialize_result_kind : T.InitializeResult.t Type.Id.t = Type.Id.make ()
 let initialize f = Route ((initialize_params_kind, initialize_result_kind), f)
 
 let map_requests (type a) : info * a Lsp.Client_request.t -> request option =
@@ -103,13 +88,13 @@ let routes (routes : route list) : handler =
   in
   loop routes
 
-let on_notification f = function
+(* let on_notification f = function
   | Jsonrpc.Packet.Notification n ->
     let decode = Lsp.Client_notification.of_jsonrpc n |> exn in
     let s = f decode in
     Option.map Lsp.Server_notification.to_jsonrpc s
     |> Option.map (fun n -> Jsonrpc.Packet.Notification n)
-  | _ -> None
+  | _ -> None *)
 
 module Server = struct
   let loop ~sw flow nf (f : handler) =
@@ -138,7 +123,7 @@ module Server = struct
         | Jsonrpc.Packet.Notification notif -> (
           match Lsp.Client_notification.of_jsonrpc notif with
           | Ok notif ->
-            nf notif;
+            Option.iter (fun f -> f notif) nf;
             loop ()
           | Error e -> failwith e)
         | _ ->
@@ -151,11 +136,19 @@ module Server = struct
     in
     Fiber.fork ~sw run
 
-  let run ~sw (conn : _ Eio.Flow.two_way) handler = loop ~sw conn handler
+  let run ?on_notification ~sw ~init (conn : _ Eio.Flow.two_way) handler =
+    let extended_handler req =
+      match routes [initialize init] req with
+      | Some res -> Some res
+      | None -> handler req
+    in
+    loop ~sw conn on_notification extended_handler
 end
 
-let two_way_from_source_and_sink (source : _ Eio.Flow.source)
-    (sink : _ Eio.Flow.sink) : Eio.Flow.two_way_ty r =
+let run = Server.run
+
+let conn_from_src_and_sink (source : _ Eio.Flow.source) (sink : _ Eio.Flow.sink)
+    : Eio.Flow.two_way_ty r =
   let module X = struct
     type t = {
       source : Eio.Flow.source_ty Eio.Flow.source;
@@ -183,3 +176,10 @@ let two_way_from_source_and_sink (source : _ Eio.Flow.source)
           sink :> Eio.Flow.sink_ty Eio.Flow.sink;
         },
       handler )
+
+module Markup = struct
+  let str fmt =
+    Format.ksprintf
+      (fun s -> T.MarkupContent.create ~kind:Markdown ~value:s)
+      fmt
+end
