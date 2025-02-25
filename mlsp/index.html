@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml"><head><title>index (mlsp.index)</title><meta charset="utf-8"/><link rel="stylesheet" href="../odoc.support/odoc.css"/><meta name="generator" content="odoc 2.4.4"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/><script src="../odoc.support/highlight.pack.js"></script><script>hljs.initHighlightingOnLoad();</script></head><body class="odoc"><nav class="odoc-nav"><a href="../index.html">Up</a> – mlsp</nav><header class="odoc-preamble"><h1 id="mlsp"><a href="#mlsp" class="anchor"></a>Mlsp</h1><p>Mlsp is a small (micro) <a href="https://microsoft.github.io/language-server-protocol/">LSP</a> server toolkit. It's goal is to provide:</p><ul><li>A simple interface for building LSP servers.</li><li>Scheduler-agnostic IO using <code>Bytesrw</code>.</li><li>Easy to use combinators for building responses to incoming client requests.</li></ul></header><nav class="odoc-toc"><ul><li><a href="#manuals">Manuals</a></li><li><a href="#mlsp_2">Library <code>mlsp</code></a></li><li><a href="#up_and_running">Up and Running</a></li></ul></nav><div class="odoc-content"><h2 id="manuals"><a href="#manuals" class="anchor"></a>Manuals</h2><p>If you are looking to get up and running quickly, have a read of the <a href="#up_and_running" title="up_and_running">up and running</a> section.</p><p>A full <span class="xref-unresolved" title="cookbook">cookbook</span> is coming soon.</p><h2 id="mlsp_2"><a href="#mlsp_2" class="anchor"></a>Library <code>mlsp</code></h2><p>The main entrypoint for this library is: </p><ul class="modules"><li><a href="Mlsp/index.html"><code>Mlsp</code></a> </li></ul><h2 id="up_and_running"><a href="#up_and_running" class="anchor"></a>Up and Running</h2><p>A functioning server must do two things:</p><ol><li>Respond to the client initialization request with a set of capabilities.</li><li>Provide answers to the client's requests for those capabilities.</li></ol><p>In this minimal example, the server provides information wherever the cursor of the client editor is.</p><pre class="language-ocaml"><code>open Bytesrw
+module T = Lsp.Types
+
+let main reader writer =
+  let on_hover (p : T.HoverParams.t) : T.Hover.t option =
+    let s =
+      Mlsp.Markup.str &quot;It **seems** you are hovering at `%i:%i`&quot; p.position.line
+        p.position.character
+    in
+    Some (T.Hover.create ~contents:(`MarkupContent s) ())
+  in
+  let init (_ : T.InitializeParams.t) =
+    let capabilities = Mlsp.capabilities ~hover:true () in
+    T.InitializeResult.create ~capabilities ()
+  in
+  let handler = Mlsp.logger @@ Mlsp.routes [Mlsp.hover on_hover] in
+  Mlsp.run ~init reader writer handler
+
+let () =
+  let reader = Bytes.Reader.of_in_channel stdin in
+  let writer = Bytes.Writer.of_out_channel ~flush_slices:true stdout in
+  main reader writer</code></pre><p>Note that this server is not asynchronous as it uses <code>in_channel</code> and <code>out_channel</code>.</p></div></body></html>
