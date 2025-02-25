@@ -14,6 +14,84 @@ ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
 WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
 ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE. *)
+open Bytesrw
+
+type reader = {
+  reader : Bytes.Reader.t;
+  buf : Buffer.t;
+}
+
+let make_reader reader = {reader; buf = Buffer.create 4096}
+
+let newline_chop bs =
+  match Bytes.index_opt bs '\r' with
+  | None -> None
+  | Some i ->
+    if Bytes.get bs (i + 1) = '\n' then
+      Some (i + 1)
+    else
+      None
+
+let get_buf_newlines reader =
+  let s = Buffer.to_bytes reader.buf in
+  match newline_chop s with
+  | None -> None
+  | Some i ->
+    let line = Bytes.sub_string s 0 (i - 1) in
+    Buffer.clear reader.buf;
+    Buffer.add_bytes reader.buf (Bytes.sub s (i + 1) (Bytes.length s - i - 1));
+    Some line
+
+let line r =
+  let rec loop () =
+    match get_buf_newlines r with
+    | Some line -> line
+    | None -> (
+      match Bytes.Reader.read r.reader with
+      | s when Bytes.Slice.is_eod s ->
+        if Buffer.length r.buf = 0 then
+          raise End_of_file
+        else
+          let s = Buffer.contents r.buf in
+          Buffer.clear r.buf;
+          s
+      | s -> (
+        Bytes.Slice.add_to_buffer r.buf s;
+        match get_buf_newlines r with
+        | None -> loop ()
+        | Some line -> line))
+  in
+  loop ()
+
+let unsafe_take_and_refill r len =
+  let s = Buffer.contents r.buf in
+  let return = String.sub s 0 len in
+  Buffer.clear r.buf;
+  if String.length s > len then begin
+    let add_back = String.sub s len (String.length s - len - 1) in
+    Buffer.add_string r.buf add_back
+  end;
+  return
+
+let take len r =
+  let rec loop () =
+    (* If we have enough data, return the length and restore the extra *)
+    if Buffer.length r.buf >= len then begin
+      unsafe_take_and_refill r len
+    end
+    else
+      (* Otherwise read more data into the buffer *)
+        match Bytes.Reader.read r.reader with
+      | s when Bytes.Slice.is_eod s ->
+        if Buffer.length r.buf < len then
+          failwith "Not enough data!"
+        else
+          unsafe_take_and_refill r len
+      | s ->
+        Bytes.Slice.add_to_buffer r.buf s;
+        loop ()
+  in
+  loop ()
 
 module Header = struct
   type t = {
@@ -88,7 +166,7 @@ let content_length_lowercase =
 let read_header =
   let init_content_length = -1 in
   let rec loop chan content_length content_type =
-    let line = Eio.Buf_read.line chan in
+    let line = line chan in
     match line with
     | exception End_of_file -> None
     | "" | "\r" -> Some (content_length, content_type)
@@ -129,7 +207,7 @@ let read chan =
   | None -> None
   | Some header -> (
     let len = Header.content_length header in
-    let buf = Eio.Buf_read.take len chan in
+    let buf = take len chan in
     match buf with
     | exception End_of_file -> raise (Error "unable to read json")
     | buf ->
@@ -141,5 +219,4 @@ let write chan packet =
   let data = Yojson.Safe.to_string json in
   let content_length = String.length data in
   let header = Header.create ~content_length () in
-  Eio.Flow.write chan
-    (List.map Cstruct.of_string [Header.to_string header; data])
+  List.iter (Bytes.Writer.write_string chan) [Header.to_string header; data]

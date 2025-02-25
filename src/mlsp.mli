@@ -1,3 +1,4 @@
+open Bytesrw
 (** {1 Mlsp}
 
     A small (micro) LSP toolkit for building servers in OCaml. *)
@@ -38,7 +39,8 @@ val logger : middleware
     requests.
 
     Your server {b must} implement the [initialize] route in order for you
-    server to complete a handshake with a client. *)
+    server to complete a handshake with a client. The {! capabilities} function
+    may be of use. *)
 
 type route
 
@@ -59,24 +61,76 @@ val codelens : (T.CodeLensParams.t -> T.CodeLens.t list) -> route
 
 val run :
   ?on_notification:(Lsp.Client_notification.t -> unit) ->
-  sw:Eio.Switch.t ->
   init:(T.InitializeParams.t -> T.InitializeResult.t) ->
-  _ Eio.Flow.two_way ->
+  Bytes.Reader.t ->
+  Bytes.Writer.t ->
   handler ->
   unit
-(** Run the server.
+(** Run the server using a {! Bytes.Reader.t} and a {! Bytes.Writer.t}.
 
     @param init
       A special handler that is required for any server. Mostly [init] will let
       the client know what capabilities the server can handle. *)
-
-val conn_from_src_and_sink :
-  _ Eio.Flow.source -> _ Eio.Flow.sink -> Eio.Flow.two_way_ty Eio.Flow.two_way
-(** A helper for creating a {! Eio.Flow.two_way} from [stdin] and [stdout]. *)
 
 (** {2 Markup} *)
 
 module Markup : sig
   val str : ('a, unit, string, T.MarkupContent.t) format4 -> 'a
   (** [str] creates a {! T.MarkupContent.t} from a format string. *)
+end
+
+(** {2 Helpers} *)
+
+val capabilities :
+  ?hover:bool ->
+  ?call_hierarchy:bool ->
+  ?code_action:bool ->
+  ?codelens:T.CodeLensOptions.t ->
+  ?color:bool ->
+  ?completion:T.CompletionOptions.t ->
+  ?declaration:bool ->
+  ?definition:bool ->
+  ?diagnostic:
+    [ `DiagnosticOptions of T.DiagnosticOptions.t
+    | `DiagnosticRegistrationOptions of T.DiagnosticRegistrationOptions.t ] ->
+  ?document_formatting:bool ->
+  ?document_highlight:bool ->
+  ?document_link:T.DocumentLinkOptions.t ->
+  ?document_on_type_formatting:T.DocumentOnTypeFormattingOptions.t ->
+  ?document_range_formatting:bool ->
+  ?document_symbol:bool ->
+  ?execute_command:T.ExecuteCommandOptions.t ->
+  ?experimental:Yojson.Safe.t ->
+  ?folding_range:bool ->
+  ?implementation:bool ->
+  ?inlay_hint:bool ->
+  ?inline_completion:bool ->
+  ?inline_value:bool ->
+  ?linked_editing_range:bool ->
+  ?moniker:bool ->
+  ?notebook_document_sync:
+    [ `NotebookDocumentSyncOptions of unit
+    | `NotebookDocumentSyncRegistrationOptions of unit ] ->
+  ?position_encoding:T.PositionEncodingKind.t ->
+  ?references:bool ->
+  ?rename:bool ->
+  ?selection_range:bool ->
+  ?semantic_tokens:
+    [ `SemanticTokensOptions of T.SemanticTokensOptions.t
+    | `SemanticTokensRegistrationOptions of
+      T.SemanticTokensRegistrationOptions.t ] ->
+  ?signature_help:T.SignatureHelpOptions.t ->
+  ?text_document:T.ServerCapabilities.textDocument ->
+  ?text_document_sync:
+    [ `TextDocumentSyncKind of T.TextDocumentSyncKind.t
+    | `TextDocumentSyncOptions of T.TextDocumentSyncOptions.t ] ->
+  ?type_definition:bool ->
+  ?type_hierarchy:bool ->
+  ?workspace:T.ServerCapabilities.workspace ->
+  ?workspace_symbol:bool ->
+  unit ->
+  T.ServerCapabilities.t
+
+module Private : sig
+  module Io = Io
 end

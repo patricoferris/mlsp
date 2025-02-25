@@ -1,4 +1,4 @@
 (executable
  (name main)
  (public_name mlsp)
- (libraries mlsp eio_main fmt.tty logs.fmt))
+ (libraries mlsp fmt.tty logs.fmt))

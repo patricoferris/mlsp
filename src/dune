@@ -1,4 +1,7 @@
 (library
  (name mlsp)
  (public_name mlsp)
- (libraries lsp eio logs astring))
+ (libraries lsp fmt bytesrw logs astring))
+
+(documentation
+ (package mlsp))

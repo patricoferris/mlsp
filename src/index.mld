@@ -1,0 +1,53 @@
+{0 Mlsp}
+
+Mlsp is a small (micro) {{: https://microsoft.github.io/language-server-protocol/} LSP} server toolkit. It's goal is to provide:
+
+- A simple interface for building LSP servers.
+- Scheduler-agnostic IO using {! Bytesrw}.
+- Easy to use combinators for building responses to incoming client requests.
+
+{1:manuals Manuals}
+
+If you are looking to get up and running quickly, have a read of the {{!up_and_running} up and running} section.
+
+A full {{!cookbook} cookbook} is coming soon.
+
+{1:mlsp Library [mlsp]}
+
+The main entrypoint for this library is: {!modules:Mlsp}
+
+{1:up_and_running Up and Running}
+
+A functioning server must do two things:
+
++ Respond to the client initialization request with a set of capabilities.
++ Provide answers to the client's requests for those capabilities.
+
+In this minimal example, the server provides information wherever the cursor of the client editor is.
+
+{[
+open Bytesrw
+module T = Lsp.Types
+
+let main reader writer =
+  let on_hover (p : T.HoverParams.t) : T.Hover.t option =
+    let s =
+      Mlsp.Markup.str "It **seems** you are hovering at `%i:%i`" p.position.line
+        p.position.character
+    in
+    Some (T.Hover.create ~contents:(`MarkupContent s) ())
+  in
+  let init (_ : T.InitializeParams.t) =
+    let capabilities = Mlsp.capabilities ~hover:true () in
+    T.InitializeResult.create ~capabilities ()
+  in
+  let handler = Mlsp.logger @@ Mlsp.routes [Mlsp.hover on_hover] in
+  Mlsp.run ~init reader writer handler
+
+let () =
+  let reader = Bytes.Reader.of_in_channel stdin in
+  let writer = Bytes.Writer.of_out_channel ~flush_slices:true stdout in
+  main reader writer
+]}
+
+Note that this server is not asynchronous as it uses [in_channel] and [out_channel]. 

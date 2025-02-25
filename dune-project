@@ -11,7 +11,7 @@
 
 (maintainers "Patrick Ferris <patrick@sirref.org>")
 
-(license MIT)
+(license ISC)
 
 (package
  (name mlsp)
@@ -19,8 +19,10 @@
  (description "Build custom LSP servers")
  (depends
    ocaml
-   eio
+   byterw
+   fmt
    lsp
+   (alcotest :with-test)
  )
  (tags
   (lsp)))

@@ -1,4 +1,3 @@
-open Eio.Std
 module T = Lsp.Types
 
 let src = Logs.Src.create "mlsp.server" ~doc:"LSP server"
@@ -88,20 +87,10 @@ let routes (routes : route list) : handler =
   in
   loop routes
 
-(* let on_notification f = function
-  | Jsonrpc.Packet.Notification n ->
-    let decode = Lsp.Client_notification.of_jsonrpc n |> exn in
-    let s = f decode in
-    Option.map Lsp.Server_notification.to_jsonrpc s
-    |> Option.map (fun n -> Jsonrpc.Packet.Notification n)
-  | _ -> None *)
-
 module Server = struct
-  let loop ~sw flow nf (f : handler) =
-    let buf = Eio.Buf_read.of_flow ~max_size:max_int flow in
+  let loop reader writer nf (f : handler) =
     let rec loop () : [`Continue] =
-      Logs.info (fun f -> f "Looping");
-      match Io.read buf with
+      match Io.read reader with
       | None -> loop ()
       | Some pkt -> (
         match pkt with
@@ -113,12 +102,10 @@ module Server = struct
             | Some r -> (
               match f r with
               | Some response ->
-                Io.write flow (Jsonrpc.Packet.Response response);
+                Io.write writer (Jsonrpc.Packet.Response response);
                 loop ()
               | None -> loop ())
-            | None ->
-              Eio.traceln "Skipping non-client requests";
-              loop ())
+            | None -> loop ())
           | Error e -> failwith e)
         | Jsonrpc.Packet.Notification notif -> (
           match Lsp.Client_notification.of_jsonrpc notif with
@@ -126,60 +113,79 @@ module Server = struct
             Option.iter (fun f -> f notif) nf;
             loop ()
           | Error e -> failwith e)
-        | _ ->
-          Eio.traceln "No packet!";
-          loop ())
+        | _ -> loop ())
     in
     let run () =
       let `Continue = loop () in
       ()
     in
-    Fiber.fork ~sw run
+    run ()
 
-  let run ?on_notification ~sw ~init (conn : _ Eio.Flow.two_way) handler =
+  let run ?on_notification ~init reader writer handler =
+    let reader = Io.make_reader reader in
     let extended_handler req =
       match routes [initialize init] req with
       | Some res -> Some res
       | None -> handler req
     in
-    loop ~sw conn on_notification extended_handler
+    loop reader writer on_notification extended_handler
 end
 
 let run = Server.run
 
-let conn_from_src_and_sink (source : _ Eio.Flow.source) (sink : _ Eio.Flow.sink)
-    : Eio.Flow.two_way_ty r =
-  let module X = struct
-    type t = {
-      source : Eio.Flow.source_ty Eio.Flow.source;
-      sink : Eio.Flow.sink_ty Eio.Flow.sink;
-    }
+(* Useful helpers *)
 
-    let single_read t = Eio.Flow.single_read t.source
-    let shutdown _ _ = ()
-    let single_write t = Eio.Flow.single_write t.sink
-    let copy t ~src = Eio.Flow.copy src t.sink
-    let read_methods = []
-  end in
-  let handler =
-    Eio.Resource.handler
-      [
-        Eio.Resource.H (Eio.Flow.Pi.Source, (module X));
-        Eio.Resource.H (Eio.Flow.Pi.Sink, (module X));
-        Eio.Resource.H (Eio.Flow.Pi.Shutdown, (module X));
-      ]
-  in
-  Eio.Resource.T
-    ( X.
-        {
-          source :> Eio.Flow.source_ty Eio.Flow.source;
-          sink :> Eio.Flow.sink_ty Eio.Flow.sink;
-        },
-      handler )
+let capabilities ?(hover = false) ?(call_hierarchy = false)
+    ?(code_action = false) ?codelens ?(color = false) ?completion
+    ?(declaration = false) ?(definition = false) ?diagnostic
+    ?(document_formatting = false) ?(document_highlight = false) ?document_link
+    ?document_on_type_formatting ?(document_range_formatting = false)
+    ?(document_symbol = false) ?execute_command ?experimental
+    ?(folding_range = false) ?(implementation = false) ?(inlay_hint = false)
+    ?(inline_completion = false) ?(inline_value = false)
+    ?(linked_editing_range = false) ?(moniker = false) ?notebook_document_sync
+    ?position_encoding ?(references = false) ?(rename = false)
+    ?(selection_range = false) ?semantic_tokens ?signature_help ?text_document
+    ?text_document_sync ?(type_definition = false) ?(type_hierarchy = false)
+    ?workspace ?(workspace_symbol = false) () =
+  T.ServerCapabilities.create ~hoverProvider:(`Bool hover)
+    ~callHierarchyProvider:(`Bool call_hierarchy)
+    ~codeActionProvider:(`Bool code_action) ?codeLensProvider:codelens
+    ~colorProvider:(`Bool color) ?completionProvider:completion
+    ~declarationProvider:(`Bool declaration)
+    ~definitionProvider:(`Bool definition) ?diagnosticProvider:diagnostic
+    ~documentFormattingProvider:(`Bool document_formatting)
+    ~documentHighlightProvider:(`Bool document_highlight)
+    ?documentLinkProvider:document_link
+    ?documentOnTypeFormattingProvider:document_on_type_formatting
+    ~documentRangeFormattingProvider:(`Bool document_range_formatting)
+    ~documentSymbolProvider:(`Bool document_symbol)
+    ?executeCommandProvider:execute_command ?experimental
+    ~foldingRangeProvider:(`Bool folding_range)
+    ~implementationProvider:(`Bool implementation)
+    ~inlayHintProvider:(`Bool inlay_hint)
+    ~inlineCompletionProvider:(`Bool inline_completion)
+    ~inlineValueProvider:(`Bool inline_value)
+    ~linkedEditingRangeProvider:(`Bool linked_editing_range)
+    ~monikerProvider:(`Bool moniker)
+    ?notebookDocumentSync:notebook_document_sync
+    ?positionEncoding:position_encoding ~referencesProvider:(`Bool references)
+    ~renameProvider:(`Bool rename)
+    ~selectionRangeProvider:(`Bool selection_range)
+    ?semanticTokensProvider:semantic_tokens
+    ?signatureHelpProvider:signature_help ?textDocument:text_document
+    ?textDocumentSync:text_document_sync
+    ~typeDefinitionProvider:(`Bool type_definition)
+    ~typeHierarchyProvider:(`Bool type_hierarchy) ?workspace
+    ~workspaceSymbolProvider:(`Bool workspace_symbol) ()
 
 module Markup = struct
   let str fmt =
     Format.ksprintf
       (fun s -> T.MarkupContent.create ~kind:Markdown ~value:s)
       fmt
+end
+
+module Private = struct
+  module Io = Io
 end

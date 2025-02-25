@@ -4,15 +4,17 @@ synopsis: "LSP Toolkit"
 description: "Build custom LSP servers"
 maintainer: ["Patrick Ferris <patrick@sirref.org>"]
 authors: ["Patrick Ferris <patrick@sirref.org>"]
-license: "MIT"
+license: "ISC"
 tags: ["lsp"]
 homepage: "https://github.com/patricoferris/mlsp"
 bug-reports: "https://github.com/patricoferris/mlsp/issues"
 depends: [
   "dune" {>= "3.17"}
   "ocaml"
-  "eio"
+  "byterw"
+  "fmt"
   "lsp"
+  "alcotest" {with-test}
   "odoc" {with-doc}
 ]
 build: [
